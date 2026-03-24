@@ -519,6 +519,8 @@ class PPTGenerator:
                 requirements_parts.append(f"必须包含：{'；'.join(must_include)}")
             if key_points:
                 requirements_parts.append(f"关键要点：{'；'.join(key_points)}")
+            if page_count:
+                requirements_parts.append(f"页数要求：{page_count} 页左右")
             
             requirements = '\n'.join(requirements_parts) if requirements_parts else ''
             
