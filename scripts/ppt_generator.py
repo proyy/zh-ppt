@@ -238,7 +238,6 @@ class PPTGenerator:
             
             try:
                 # 调用 banana-slides 原生 API 生成页面图片
-                # 注意：需要提供 style_description 或使用模板
                 url = f"{api_base}/api/projects/{project_id}/pages/{page_id}/generate/image"
                 
                 # 获取页面描述作为风格参考
@@ -247,10 +246,8 @@ class PPTGenerator:
                 if isinstance(desc_content, dict):
                     extra_fields = desc_content.get('extra_fields', {})
                     if isinstance(extra_fields, dict):
-                        # 尝试从 extra_fields 获取风格描述
                         page_style_desc = extra_fields.get('视觉建议', '') or extra_fields.get('视觉风格', '')
                 
-                # 优先使用页面风格，否则使用全局风格
                 final_style = page_style_desc if page_style_desc else style_description
                 
                 response = self.session.post(url, json={
@@ -259,16 +256,54 @@ class PPTGenerator:
                     'style_description': final_style
                 }, timeout=300)
                 
-                if response.status_code == 200:
+                # 202 表示任务已提交（异步），200 表示已完成
+                if response.status_code in [200, 202]:
                     result = response.json()
-                    page_data = result.get('data', {})
-                    generated_image_path = page_data.get('generated_image_path')
+                    data = result.get('data', {})
+                    task_id = data.get('task_id')
                     
-                    if generated_image_path:
-                        image_paths.append(generated_image_path)
-                        logger.info(f"第 {i} 页图片生成成功：{generated_image_path}")
+                    # 如果是异步任务，轮询等待完成
+                    if task_id and response.status_code == 202:
+                        logger.info(f"第 {i} 页图片生成任务已提交，Task ID: {task_id}，等待完成...")
+                        
+                        # 轮询任务状态（最多等待 5 分钟）
+                        for attempt in range(60):
+                            time.sleep(5)
+                            task_response = self.session.get(
+                                f"{api_base}/api/projects/{project_id}/tasks/{task_id}",
+                                timeout=30
+                            )
+                            if task_response.status_code == 200:
+                                task_data = task_response.json().get('data', {})
+                                task_status = task_data.get('status', '')
+                                
+                                if task_status == 'COMPLETED':
+                                    logger.info(f"第 {i} 页图片生成完成")
+                                    break
+                                elif task_status in ['FAILED', 'ERROR']:
+                                    error_msg = task_data.get('error_message', 'Unknown error')
+                                    logger.error(f"第 {i} 页图片生成失败：{error_msg}")
+                                    break
+                                else:
+                                    logger.debug(f"第 {i} 页图片生成中：{task_status}")
+                    
+                    # 获取页面数据，提取图片路径
+                    page_response = self.session.get(
+                        f"{api_base}/api/projects/{project_id}/pages/{page_id}",
+                        timeout=30
+                    )
+                    if page_response.status_code == 200:
+                        page_data = page_response.json().get('data', {})
+                        generated_image_path = page_data.get('generated_image_path')
+                        
+                        if generated_image_path:
+                            image_paths.append(generated_image_path)
+                            logger.info(f"第 {i} 页图片路径：{generated_image_path}")
+                        else:
+                            logger.warning(f"第 {i} 页图片生成成功但未返回路径")
                     else:
-                        logger.warning(f"第 {i} 页图片生成成功但未返回路径")
+                        logger.error(f"获取第 {i} 页数据失败：{page_response.status_code}")
+                        
                 else:
                     logger.error(f"第 {i} 页图片生成失败：{response.status_code} - {response.text[:200]}")
                     
