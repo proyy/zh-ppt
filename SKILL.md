@@ -298,16 +298,23 @@ curl -X GET http://localhost:15280/api/projects/{project_id}/export/pptx \
 
 zh-ppt 的配置 (`config.json`) 和 banana-slides 的配置 (`.env` / 数据库) 是独立的。
 
-**首次部署或更新配置时**，运行同步脚本：
+**首次部署或更新配置时**，按以下顺序执行：
 
 ```bash
 cd scripts
+
+# 1. 初始化数据库（首次运行必需）
+python scripts/init_db.py
+
+# 2. 同步配置到 banana-slides
 python scripts/sync_config.py
 ```
 
 这会自动将 `config.json` 同步到：
 - `banana-slides/.env` 文件
 - banana-slides 数据库 settings 表（通过 API）
+
+**注意**：必须先初始化数据库，否则同步配置会失败（数据库表不存在）。
 
 ### config.json
 
@@ -505,7 +512,7 @@ python scripts/ppt_generator.py --mode auto \
 
 ### 0. 首次部署流程
 
-**重要**: 首次运行需要完成以下步骤：
+**重要**: 首次运行需要完成以下步骤（**顺序很重要**）：
 
 ```bash
 # 1. 克隆仓库（包含子模块）
@@ -518,11 +525,11 @@ cd zh-ppt
 # 3. 安装依赖
 pip install -r requirements.txt
 
-# 4. 同步配置到 banana-slides
-python scripts/sync_config.py
-
-# 5. 初始化数据库（首次运行必需）
+# 4. 初始化数据库（必须先执行）
 python scripts/init_db.py
+
+# 5. 同步配置到 banana-slides
+python scripts/sync_config.py
 
 # 6. 启动 banana-slides 服务
 cd banana-slides && python backend/app.py
@@ -530,6 +537,8 @@ cd banana-slides && python backend/app.py
 # 7. 生成 PPT（新终端）
 python scripts/ppt_generator.py --mode theme --prompt "人工智能发展史"
 ```
+
+**注意**：步骤 4 和 5 的顺序不能颠倒，必须先初始化数据库再同步配置。
 
 ### 1. API Key 配置
 - 使用前请在 config.json 中配置 `QWEN_API_KEY`
@@ -588,9 +597,11 @@ python scripts/init_db.py
 **原因**: 数据库未初始化或 banana-slides 服务未启动
 
 **解决**:
-1. 运行 `python scripts/init_db.py` 初始化数据库
+1. **确认已执行初始化**：`python scripts/init_db.py`
 2. 启动 banana-slides 服务：`cd banana-slides && python backend/app.py`
 3. 重新运行同步：`python scripts/sync_config.py`
+
+**注意**：必须先初始化数据库（步骤 1），再同步配置（步骤 3）。
 
 ### 问题 3：banana-slides 服务无法连接
 
