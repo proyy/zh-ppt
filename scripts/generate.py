@@ -223,6 +223,9 @@ def request_image(
             max_retries=2
         )
         
+        # Qwen-Image 使用 images 接口
+        logger.info(f"使用 OpenAI SDK 调用 Qwen-Image，base_url: {api_url}")
+        
         # 构建请求参数
         kwargs = {
             'model': model,
@@ -238,7 +241,20 @@ def request_image(
                 'X-DashScope-Image-Reference': 'true',
             }
         
-        response = client.images.generate(**kwargs)
+        try:
+            response = client.images.generate(**kwargs)
+        except Exception as gen_error:
+            # 如果 images.generate 失败，尝试 chat.completions 方式
+            logger.warning(f"images.generate 失败：{gen_error}")
+            logger.info("尝试使用 wanx 模型格式...")
+            
+            # 阿里云 DashScope 的 wanx 模型使用不同格式
+            response = client.images.generate(
+                model='wanx2.1-t2i-turbo',  # 尝试通义万相
+                prompt=prompt,
+                size=size,
+                n=1,
+            )
         
         # 提取图片 URL
         if hasattr(response, 'data') and response.data:
@@ -257,9 +273,13 @@ def request_image(
             logger.error("API 返回数据中没有图片 URL")
             return None
             
-    except Exception as e:
-        logger.error(f"调用生图接口失败：{type(e).__name__}: {str(e)}")
-        return None
+        except Exception as e:
+            error_detail = f"调用生图接口失败：{type(e).__name__}: {str(e)}"
+            logger.error(error_detail, exc_info=True)
+            # 提供更详细的错误信息
+            if hasattr(e, 'response'):
+                logger.error(f"API Response: {e.response.text if hasattr(e.response, 'text') else e.response}")
+            return None
 
 
 def download_image(image: Image.Image, output_dir: Path, prefix: str = "page") -> str:

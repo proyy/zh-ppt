@@ -591,6 +591,16 @@ class PPTGenerator:
 
 def print_result(result: dict):
     """打印生成结果"""
+    if not result.get('success'):
+        print("\n" + "=" * 60)
+        print("⚠️  PPT 生成未完成")
+        print("=" * 60)
+        print(f"项目 ID: {result.get('project_id', 'N/A')}")
+        print(f"消息：{result.get('message', 'Unknown error')}")
+        print(f"页数：{result.get('pages', 0)}")
+        print("=" * 60)
+        return
+    
     print("\n" + "=" * 60)
     print("✅ PPT 生成完成！")
     print("=" * 60)
