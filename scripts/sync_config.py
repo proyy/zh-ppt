@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-配置同步脚本 - 将 zh-ppt/config.json 同步到 banana-slides
+配置同步脚本 - 将 config.json 同步到 banana-slides
 
 用途：
 1. 首次部署时初始化 banana-slides 配置
@@ -25,8 +25,9 @@ logger = logging.getLogger('config-sync')
 
 
 def load_zh_ppt_config():
-    """加载 zh-ppt/config.json"""
-    config_path = Path(__file__).parent / 'config.json'
+    """加载根目录 config.json"""
+    # scripts/ 的父目录即为仓库根目录
+    config_path = Path(__file__).parent.parent / 'config.json'
     
     if not config_path.exists():
         logger.error(f"配置文件不存在：{config_path}")
