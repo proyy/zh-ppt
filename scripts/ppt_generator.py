@@ -163,10 +163,11 @@ class PPTGenerator:
                 
                 logger.info(f"任务状态：{task_status}")
                 
-                if task_status == 'completed':
+                # 任务状态可能为 COMPLETED/completed 或 PROCESSING/processing
+                if task_status.upper() == 'COMPLETED':
                     logger.info("任务完成！")
                     break
-                elif task_status in ['failed', 'error']:
+                elif task_status.upper() in ['FAILED', 'ERROR']:
                     error_msg = task.get('error_message', 'Unknown error')
                     logger.error(f"任务失败：{error_msg}")
                     raise RuntimeError(f"Task failed: {error_msg}")
@@ -183,10 +184,11 @@ class PPTGenerator:
                 
                 logger.info(f"项目状态：{status}")
                 
-                if status == 'completed':
+                # 项目状态可能为 COMPLETED/completed 或 PROCESSING/processing
+                if status.upper() == 'COMPLETED':
                     logger.info("项目完成！")
                     break
-                elif status in ['failed', 'error']:
+                elif status.upper() in ['FAILED', 'ERROR']:
                     error_msg = project.get('error_message', 'Unknown error')
                     logger.error(f"项目失败：{error_msg}")
                     raise RuntimeError(f"Project failed: {error_msg}")
