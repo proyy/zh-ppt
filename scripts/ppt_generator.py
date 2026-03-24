@@ -287,22 +287,30 @@ class PPTGenerator:
                                 else:
                                     logger.debug(f"第 {i} 页图片生成中：{task_status}")
                     
-                    # 获取页面数据，提取图片路径
-                    page_response = self.session.get(
-                        f"{api_base}/api/projects/{project_id}/pages/{page_id}",
+                    # 获取整个项目数据，从中提取当前页面的图片路径
+                    # 注意：banana-slides 没有单个页面的 GET 接口
+                    project_response = self.session.get(
+                        f"{api_base}/api/projects/{project_id}",
                         timeout=30
                     )
-                    if page_response.status_code == 200:
-                        page_data = page_response.json().get('data', {})
-                        generated_image_path = page_data.get('generated_image_path')
+                    if project_response.status_code == 200:
+                        project_data = project_response.json().get('data', {})
+                        pages_data = project_data.get('pages', [])
+                        
+                        # 查找当前页面的数据
+                        generated_image_path = None
+                        for p in pages_data:
+                            if p.get('page_id') == page_id:
+                                generated_image_path = p.get('generated_image_path')
+                                break
                         
                         if generated_image_path:
                             image_paths.append(generated_image_path)
                             logger.info(f"第 {i} 页图片路径：{generated_image_path}")
                         else:
-                            logger.warning(f"第 {i} 页图片生成成功但未返回路径")
+                            logger.warning(f"第 {i} 页图片生成成功但未找到图片路径")
                     else:
-                        logger.error(f"获取第 {i} 页数据失败：{page_response.status_code}")
+                        logger.error(f"获取项目数据失败：{project_response.status_code}")
                         
                 else:
                     logger.error(f"第 {i} 页图片生成失败：{response.status_code} - {response.text[:200]}")
