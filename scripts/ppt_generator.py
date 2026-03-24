@@ -200,14 +200,15 @@ class PPTGenerator:
         # 返回最新项目数据
         return self._call_banana_api(f'/api/projects/{project_id}')
     
-    def _generate_images(self, project_id: int, pages: List[dict]) -> List[str]:
+    def _generate_images(self, project_id: int, pages: List[dict], requirements: str = None) -> List[str]:
         """
         为 PPT 页面生成配图（使用 banana-slides 原生 API）
         
         Args:
             project_id: 项目 ID
             pages: 页面列表
-            
+            requirements: 详细要求（包含风格要求）
+             
         Returns:
             生成的图片路径列表
         """
@@ -215,6 +216,17 @@ class PPTGenerator:
         api_base = self.config.get('banana_slides', {}).get('api_base', 'http://localhost:15280')
         
         logger.info(f"开始生成配图（使用 banana-slides 原生 API），页面数量：{len(pages)}")
+        
+        # 从 requirements 中提取风格描述
+        style_description = '简洁专业的商务风格，清晰的视觉层次'
+        if requirements:
+            if '风格要求：' in requirements:
+                style_start = requirements.find('风格要求：') + len('风格要求：')
+                style_end = requirements.find('\n', style_start)
+                if style_end == -1:
+                    style_end = len(requirements)
+                style_description = requirements[style_start:style_end].strip()
+                logger.info(f"使用风格描述：{style_description}")
         
         for i, page in enumerate(pages, 1):
             page_id = page.get('page_id')
@@ -231,17 +243,20 @@ class PPTGenerator:
                 
                 # 获取页面描述作为风格参考
                 desc_content = page.get('description_content', {})
-                style_desc = ""
+                page_style_desc = ""
                 if isinstance(desc_content, dict):
                     extra_fields = desc_content.get('extra_fields', {})
                     if isinstance(extra_fields, dict):
                         # 尝试从 extra_fields 获取风格描述
-                        style_desc = extra_fields.get('视觉建议', '') or extra_fields.get('视觉风格', '')
+                        page_style_desc = extra_fields.get('视觉建议', '') or extra_fields.get('视觉风格', '')
+                
+                # 优先使用页面风格，否则使用全局风格
+                final_style = page_style_desc if page_style_desc else style_description
                 
                 response = self.session.post(url, json={
                     'use_template': False,
                     'force_regenerate': True,
-                    'style_description': style_desc if style_desc else '简洁专业的商务风格，清晰的视觉层次'
+                    'style_description': final_style
                 }, timeout=300)
                 
                 if response.status_code == 200:
@@ -531,7 +546,7 @@ class PPTGenerator:
         Args:
             prompt: 主题/想法
             requirements: 额外要求（包含详细内容要求、风格要求、必须包含内容等）
-            
+             
         Returns:
             生成结果
         """
@@ -548,6 +563,18 @@ class PPTGenerator:
         }
         if requirements:
             project_data['outline_requirements'] = requirements
+            # 提取风格描述用于图片生成
+            style_desc = ''
+            if '风格要求：' in requirements:
+                style_start = requirements.find('风格要求：') + len('风格要求：')
+                style_end = requirements.find('\n', style_start)
+                if style_end == -1:
+                    style_end = len(requirements)
+                style_desc = requirements[style_start:style_end].strip()
+            
+            if style_desc:
+                project_data['template_style'] = style_desc
+                logger.info(f"提取风格描述：{style_desc}")
             logger.info(f"已设置 outline_requirements：{len(requirements)} 字符")
         else:
             logger.warning("未提供 outline_requirements，PPT 内容可能不符合预期")
@@ -588,7 +615,7 @@ class PPTGenerator:
         pages = project.get('pages', [])
         if not pages:
             raise RuntimeError(f"项目 {project_id} 没有页面数据")
-        image_paths = self._generate_images(project_id, pages)
+        image_paths = self._generate_images(project_id, pages, requirements)
         
         if not image_paths:
             logger.warning("没有生成任何图片，跳过 PPTX 导出")
@@ -672,8 +699,8 @@ class PPTGenerator:
         if not project_id:
             raise RuntimeError(f"创建项目失败：{project}")
         
-        # 3. 后续步骤同 theme 模式
-        return self._continue_generation(project_id)
+        # 3. 后续步骤同 theme 模式，传入 requirements
+        return self._continue_generation(project_id, requirements)
     
     def refresh_ppt(self, file_path: str, requirements: str = None) -> dict:
         """
@@ -727,11 +754,16 @@ class PPTGenerator:
         if not project_id:
             raise RuntimeError(f"创建项目失败：{project}")
         
-        # 3. 后续步骤同 theme 模式
-        return self._continue_generation(project_id)
+        # 3. 后续步骤同 theme 模式，传入 requirements
+        return self._continue_generation(project_id, requirements)
     
-    def _continue_generation(self, project_id: int) -> dict:
-        """继续生成流程（等待任务、生成描述、配图、导出）"""
+    def _continue_generation(self, project_id: int, requirements: str = None) -> dict:
+        """继续生成流程（等待任务、生成描述、配图、导出）
+        
+        Args:
+            project_id: 项目 ID
+            requirements: 额外要求（包含风格要求）
+        """
         # 1. 生成大纲（触发后台任务）
         logger.info("步骤 1: 生成大纲")
         outline_task = self._call_banana_api(f'/api/projects/{project_id}/generate/outline', 'POST', {})
@@ -759,7 +791,7 @@ class PPTGenerator:
         pages = project.get('pages', [])
         if not pages:
             raise RuntimeError(f"项目 {project_id} 没有页面数据")
-        image_paths = self._generate_images(project_id, pages)
+        image_paths = self._generate_images(project_id, pages, requirements)
         
         # 6. 导出 PPTX
         logger.info("步骤 4: 导出 PPTX")
