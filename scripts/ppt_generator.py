@@ -202,7 +202,7 @@ class PPTGenerator:
     
     def _generate_images(self, project_id: int, pages: List[dict]) -> List[str]:
         """
-        为 PPT 页面生成配图
+        为 PPT 页面生成配图（使用 banana-slides 原生 API）
         
         Args:
             project_id: 项目 ID
@@ -212,86 +212,43 @@ class PPTGenerator:
             生成的图片路径列表
         """
         image_paths = []
-        models = self.config.get('models', {})
-        image_model = models.get('image', 'qwen-image-2.0-pro')
-        image_settings = self.config.get('image_settings', {})
-        aspect_ratio = image_settings.get('aspect_ratio', '16:9')
-        resolution = image_settings.get('resolution', '2K')
+        api_base = self.config.get('banana_slides', {}).get('api_base', 'http://localhost:15280')
         
-        logger.info(f"开始生成配图，使用模型：{image_model}")
-        logger.info(f"页面数量：{len(pages)}")
-        
-        # 调试：输出第一个页面的结构
-        if pages:
-            logger.debug(f"Page 1 keys: {list(pages[0].keys())}")
-            desc_content = pages[0].get('description_content', {})
-            if isinstance(desc_content, dict):
-                logger.debug(f"Page 1 description_content keys: {list(desc_content.keys())}")
+        logger.info(f"开始生成配图（使用 banana-slides 原生 API），页面数量：{len(pages)}")
         
         for i, page in enumerate(pages, 1):
-            # 尝试多种字段获取 image_prompt
-            prompt = page.get('image_prompt', '')
-            
-            # 如果没有 image_prompt，尝试从 description_content 提取
-            if not prompt:
-                desc_content = page.get('description_content') or {}
-                if isinstance(desc_content, dict):
-                    # 尝试从 description_content.text 提取
-                    text = desc_content.get('text', '')
-                    if text:
-                        # 截取前 300 字符作为 prompt
-                        prompt = text[:300]
-                        logger.info(f"第 {i} 页使用 description_content.text 作为 prompt")
-            
-            # 如果还是没有，尝试从 outline_content 提取
-            if not prompt:
-                outline_content = page.get('outline_content') or {}
-                if isinstance(outline_content, dict):
-                    title = outline_content.get('title', '')
-                    content = outline_content.get('content', '')
-                    if title or content:
-                        prompt = (title + ' ' + content)[:300]
-                        logger.info(f"第 {i} 页使用 outline_content 作为 prompt")
-            
-            if not prompt:
-                logger.warning(f"第 {i} 页缺少 image_prompt 和 description，跳过")
+            page_id = page.get('page_id')
+            if not page_id:
+                logger.warning(f"第 {i} 页缺少 page_id，跳过")
                 continue
             
-            logger.info(f"生成第 {i} 页配图：{prompt[:50]}...")
+            logger.info(f"生成第 {i} 页配图，page_id: {page_id}")
             
-            prefix = f"page_{i}"
-            
-            cmd = [
-                sys.executable,
-                str(Path(__file__).parent / 'generate.py'),
-                '--prompt', prompt,
-                '--model', image_model,
-                '--aspect-ratio', aspect_ratio,
-                '--resolution', resolution,
-                '--prefix', prefix,
-                '--json',
-            ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            
-            if result.returncode == 0:
-                # 解析 JSON 输出获取图片路径
-                for line in result.stdout.split('\n'):
-                    if line.startswith('JSON 输出：'):
-                        try:
-                            json_str = line.replace('JSON 输出：', '').strip()
-                            output = json.loads(json_str)
-                            if output.get('success') and output.get('path'):
-                                image_path = output['path']
-                                image_paths.append(image_path)
-                                logger.info(f"图片已保存：{image_path}")
-                            break
-                        except json.JSONDecodeError:
-                            logger.warning("无法解析 JSON 输出，尝试其他方式")
-                            continue
-            else:
-                logger.error(f"图片生成失败：{result.stderr}")
+            try:
+                # 调用 banana-slides 原生 API 生成页面图片
+                url = f"{api_base}/api/projects/{project_id}/pages/{page_id}/generate/image"
+                response = self.session.post(url, json={
+                    'use_template': False,
+                    'force_regenerate': True
+                }, timeout=300)
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    page_data = result.get('data', {})
+                    generated_image_path = page_data.get('generated_image_path')
+                    
+                    if generated_image_path:
+                        image_paths.append(generated_image_path)
+                        logger.info(f"第 {i} 页图片生成成功：{generated_image_path}")
+                    else:
+                        logger.warning(f"第 {i} 页图片生成成功但未返回路径")
+                else:
+                    logger.error(f"第 {i} 页图片生成失败：{response.status_code} - {response.text[:200]}")
+                    
+            except Exception as e:
+                logger.error(f"第 {i} 页图片生成异常：{e}")
         
+        logger.info(f"配图生成完成，成功：{len(image_paths)}/{len(pages)}")
         return image_paths
     
     def _export_pptx(self, project_id: int) -> str:
