@@ -110,7 +110,7 @@ class PPTGenerator:
         Returns:
             API 响应数据
         """
-        api_base = self.config.get('banana_slides', {}).get('api_base', 'http://localhost:5000')
+        api_base = self.config.get('banana_slides', {}).get('api_base', 'http://localhost:15280')
         timeout = self.config.get('banana_slides', {}).get('timeout', 300)
         url = f"{api_base}{endpoint}"
         
