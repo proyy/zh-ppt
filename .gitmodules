@@ -1,0 +1,3 @@
+[submodule "banana-slides"]
+	path = banana-slides
+	url = https://github.com/proyy/banana-slides.git
