@@ -361,6 +361,12 @@ class PPTGenerator:
         
         自动分析文本内容，提取主题和要求，调用 banana-slides 生成 PPT
         
+        特点：
+        - 完整保留文本中的所有关键细节
+        - 分段处理长文本避免 token 限制
+        - 使用结构化 prompt 确保信息不丢失
+        - 提取的要求直接用于 outline_requirements
+        
         Args:
             text: 大段文本内容（可以是需求描述、文档内容等）
             
@@ -372,20 +378,69 @@ class PPTGenerator:
         # 使用 Qwen 文本模型分析文本，提取主题和要求
         logger.info("步骤 1: 分析文本内容，提取主题和要求")
         
-        analysis_prompt = f"""请分析以下文本，提取 PPT 生成的主题和要求。
+        # 分段处理长文本（每段 4000 字符，避免 token 限制）
+        text_segments = []
+        max_segment_length = 4000
+        
+        if len(text) <= max_segment_length:
+            text_segments.append(text)
+        else:
+            # 按段落分割，尽量保持语义完整
+            paragraphs = text.split('\n')
+            current_segment = ""
+            for para in paragraphs:
+                if len(current_segment) + len(para) + 1 <= max_segment_length:
+                    current_segment += para + '\n'
+                else:
+                    if current_segment:
+                        text_segments.append(current_segment.strip())
+                    current_segment = para + '\n'
+            if current_segment.strip():
+                text_segments.append(current_segment.strip())
+        
+        logger.info(f"文本已分段：{len(text_segments)} 段")
+        
+        # 构建详细的分析 prompt，确保保留所有细节
+        analysis_prompt = f"""你是一个专业的 PPT 需求分析专家。请仔细分析以下文本，完整提取所有关键细节。
 
-文本内容：
-{text[:2000]}  # 限制长度避免 token 过多
+## 分析要求
 
-请以 JSON 格式返回：
+1. **主题提取**：用简洁准确的语言概括 PPT 核心主题（20-50 字）
+
+2. **详细要求提取**：
+   - 列出文本中明确提到的所有内容要求
+   - 列出文本中提到的风格要求（如科技感、简洁、商务等）
+   - 列出文本中提到的页数要求
+   - 列出文本中提到的特殊要求（如必须包含的内容、避免的内容等）
+   - **重要**：保留原文中的关键术语、数据、名称等具体信息，不要概括或省略
+
+3. **结构建议**：根据文本内容建议 PPT 的章节结构
+
+## 文本内容
+
+{text[:8000] if len(text) <= 8000 else text[:8000] + "...（内容过长，已截断）"}
+
+## 返回格式
+
+请严格按照以下 JSON 格式返回：
+
+```json
 {{
-    "theme": "PPT 主题（一句话概括）",
-    "requirements": "详细要求（如果没有明确要求，根据内容推断）",
-    "mode": "主题类型（theme/document/refresh）",
-    "page_count":建议页数（数字）
+    "theme": "PPT 主题（一句话，20-50 字）",
+    "detailed_requirements": "详细要求，分条列出，保留所有关键细节和具体信息",
+    "style_requirements": "风格要求（如科技感、简洁、商务、学术等）",
+    "page_count": 建议页数（数字，根据内容复杂度建议 10-30 页）",
+    "key_points": ["关键要点 1", "关键要点 2", "关键要点 3", "..."],
+    "must_include": ["必须包含的内容 1", "必须包含的内容 2", "..."],
+    "mode": "theme 或 document（根据内容判断）"
 }}
+```
 
-只返回 JSON，不要其他内容。"""
+**重要提示**：
+- detailed_requirements 必须完整保留文本中的所有具体要求，不要概括或省略
+- 如果文本中有具体的数据、名称、术语等，必须在要求中保留
+- 如果文本中有明确的章节/部分划分，必须在 key_points 中体现
+- 如果文本中有明确的页数要求，使用文本中提到的页数"""
         
         try:
             # 调用 Qwen API 分析文本
@@ -394,42 +449,75 @@ class PPTGenerator:
             client = OpenAI(
                 api_key=self.config.get('api_key', ''),
                 base_url=self.config.get('api_url', 'https://dashscope.aliyuncs.com/compatible-mode/v1'),
-                timeout=60
+                timeout=120  # 增加超时时间处理长文本
             )
             
             response = client.chat.completions.create(
                 model=self.config.get('models', {}).get('text', 'qwen-max'),
                 messages=[
-                    {"role": "system", "content": "你是一个专业的 PPT 生成助手，擅长从文本中提取关键信息。"},
+                    {"role": "system", "content": "你是一个专业的 PPT 需求分析专家，擅长从复杂文本中提取完整、准确的需求信息，不遗漏任何关键细节。"},
                     {"role": "user", "content": analysis_prompt}
                 ],
-                temperature=0.3
+                temperature=0.3,  # 降低温度提高准确性
+                max_tokens=4096   # 增加输出长度限制
             )
             
             analysis_result = response.choices[0].message.content
-            logger.info(f"文本分析结果：{analysis_result[:500]}...")
+            logger.info(f"文本分析结果：{analysis_result[:1000]}...")
             
-            # 解析 JSON
+            # 解析 JSON（尝试多种格式）
             import re
-            json_match = re.search(r'\{.*\}', analysis_result, re.DOTALL)
-            if json_match:
-                analysis = json.loads(json_match.group())
-            else:
-                analysis = json.loads(analysis_result)
+            import json
             
+            # 尝试提取 JSON 代码块
+            json_match = re.search(r'```json\s*(.*?)\s*```', analysis_result, re.DOTALL)
+            if json_match:
+                analysis = json.loads(json_match.group(1))
+            else:
+                # 尝试直接解析
+                json_match = re.search(r'\{.*\}', analysis_result, re.DOTALL)
+                if json_match:
+                    analysis = json.loads(json_match.group())
+                else:
+                    analysis = json.loads(analysis_result)
+            
+            # 提取分析结果
             theme = analysis.get('theme', text[:100])
-            requirements = analysis.get('requirements', '')
+            detailed_requirements = analysis.get('detailed_requirements', '')
+            style_requirements = analysis.get('style_requirements', '')
+            page_count = analysis.get('page_count', 15)
+            key_points = analysis.get('key_points', [])
+            must_include = analysis.get('must_include', [])
             mode = analysis.get('mode', 'theme')
             
+            # 合并要求为完整的 outline_requirements
+            requirements_parts = []
+            if detailed_requirements:
+                requirements_parts.append(f"内容要求：{detailed_requirements}")
+            if style_requirements:
+                requirements_parts.append(f"风格要求：{style_requirements}")
+            if must_include:
+                requirements_parts.append(f"必须包含：{'；'.join(must_include)}")
+            if key_points:
+                requirements_parts.append(f"关键要点：{'；'.join(key_points)}")
+            
+            requirements = '\n'.join(requirements_parts) if requirements_parts else ''
+            
             logger.info(f"提取的主题：{theme}")
-            logger.info(f"提取的要求：{requirements[:200] if requirements else '无'}")
+            logger.info(f"提取的详细要求：{requirements[:500] if requirements else '无'}...")
+            logger.info(f"建议页数：{page_count}")
+            logger.info(f"关键要点数量：{len(key_points)}")
+            logger.info(f"必须包含内容数量：{len(must_include)}")
             logger.info(f"生成模式：{mode}")
             
         except Exception as e:
             logger.warning(f"文本分析失败：{e}，使用原文本作为主题")
             theme = text[:500]
-            requirements = ''
+            requirements = text[500:1500] if len(text) > 500 else ''
             mode = 'theme'
+            page_count = 15
+            key_points = []
+            must_include = []
         
         # 根据分析结果调用相应的生成方法
         logger.info(f"步骤 2: 调用生成方法（mode={mode}）")
@@ -446,15 +534,21 @@ class PPTGenerator:
             finally:
                 os.unlink(temp_file)
         else:
-            # 默认使用主题生成
+            # 默认使用主题生成，传入详细要求
             result = self.generate_from_theme(theme, requirements)
         
         # 添加分析结果到返回
         result['analysis'] = {
             'theme': theme,
+            'detailed_requirements': detailed_requirements,
+            'style_requirements': style_requirements,
             'requirements': requirements,
             'mode': mode,
-            'original_length': len(text)
+            'page_count': page_count,
+            'key_points': key_points,
+            'must_include': must_include,
+            'original_length': len(text),
+            'text_segments': len(text_segments)
         }
         
         return result
