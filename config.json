@@ -1,0 +1,18 @@
+{
+  "api_key": "",
+  "api_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "models": {
+    "text": "qwen-max",
+    "image": "qwen-image-2.0-pro",
+    "vision": "qwen-vl-max"
+  },
+  "image_settings": {
+    "aspect_ratio": "16:9",
+    "resolution": "2K"
+  },
+  "output_dir": "./output",
+  "banana_slides": {
+    "api_base": "http://localhost:15280",
+    "timeout": 300
+  }
+}

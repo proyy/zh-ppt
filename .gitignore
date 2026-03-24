@@ -1,0 +1,19 @@
+# banana-slides 源码（需手动下载）
+banana-slides/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 环境
+.env
+venv/
+
+# 输出
+output/
+logs/
+
+# IDE
+.vscode/
+.idea/
