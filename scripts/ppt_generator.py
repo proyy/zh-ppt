@@ -226,10 +226,22 @@ class PPTGenerator:
             
             try:
                 # 调用 banana-slides 原生 API 生成页面图片
+                # 注意：需要提供 style_description 或使用模板
                 url = f"{api_base}/api/projects/{project_id}/pages/{page_id}/generate/image"
+                
+                # 获取页面描述作为风格参考
+                desc_content = page.get('description_content', {})
+                style_desc = ""
+                if isinstance(desc_content, dict):
+                    extra_fields = desc_content.get('extra_fields', {})
+                    if isinstance(extra_fields, dict):
+                        # 尝试从 extra_fields 获取风格描述
+                        style_desc = extra_fields.get('视觉建议', '') or extra_fields.get('视觉风格', '')
+                
                 response = self.session.post(url, json={
                     'use_template': False,
-                    'force_regenerate': True
+                    'force_regenerate': True,
+                    'style_description': style_desc if style_desc else '简洁专业的商务风格，清晰的视觉层次'
                 }, timeout=300)
                 
                 if response.status_code == 200:
