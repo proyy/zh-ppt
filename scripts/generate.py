@@ -149,43 +149,40 @@ def calculate_size(aspect_ratio: str, resolution: str) -> str:
     """
     计算 Qwen-Image 所需的 size 参数（格式："width*height"）
     
+    Qwen-Image 2.0 系列推荐分辨率:
+    - 16:9 -> 2688*1536
+    - 9:16 -> 1536*2688
+    - 4:3 -> 2368*1728
+    - 3:4 -> 1728*2368
+    - 1:1 -> 2048*2048
+    
     Args:
         aspect_ratio: 宽高比，如 "16:9"
         resolution: 分辨率，如 "1K", "2K", "4K"
         
     Returns:
-        size 字符串，如 "2048*1152"
+        size 字符串，如 "2688*1536"
     """
-    aspect_ratios = {
-        "16:9": (16, 9),
-        "9:16": (9, 16),
-        "4:3": (4, 3),
-        "3:4": (3, 4),
-        "3:2": (3, 2),
-        "2:3": (2, 3),
-        "1:1": (1, 1),
+    # Qwen-Image 2.0 系列推荐分辨率
+    qwen_sizes = {
+        ("16:9", "2K"): "2688*1536",
+        ("9:16", "2K"): "1536*2688",
+        ("4:3", "2K"): "2368*1728",
+        ("3:4", "2K"): "1728*2368",
+        ("1:1", "2K"): "2048*2048",
+        ("16:9", "1K"): "1664*928",
+        ("9:16", "1K"): "928*1664",
+        ("4:3", "1K"): "1472*1104",
+        ("3:4", "1K"): "1104*1472",
+        ("1:1", "1K"): "1328*1328",
     }
-    resolution_base = {
-        "1K": 1024,
-        "2K": 2048,
-        "4K": 4096,
-    }
     
-    ratio = aspect_ratios.get(aspect_ratio, (16, 9))
-    base = resolution_base.get(resolution, 2048)
+    key = (aspect_ratio, resolution)
+    if key in qwen_sizes:
+        return qwen_sizes[key]
     
-    if ratio[0] >= ratio[1]:
-        w = base
-        h = int(base * ratio[1] / ratio[0])
-    else:
-        h = base
-        w = int(base * ratio[0] / ratio[1])
-    
-    # 对齐到 64 的倍数
-    w = max(64, ((w + 63) // 64) * 64)
-    h = max(64, ((h + 63) // 64) * 64)
-    
-    return f"{w}*{h}"
+    # 默认返回 2K 16:9
+    return "2688*1536"
 
 
 def request_image(
@@ -199,6 +196,8 @@ def request_image(
     """
     发送 prompt 到生图接口，解析返回结果
     
+    使用阿里云百炼 multimodal-generation API
+    
     Args:
         prompt: 图片描述
         api_key: API Key
@@ -210,76 +209,114 @@ def request_image(
     Returns:
         生成的 PIL Image 对象，失败返回 None
     """
-    from openai import OpenAI
+    import requests as req
     
-    logger.info(f"调用 Qwen-Image API，模型：{model}, 尺寸：{size}")
+    # Qwen-Image API 端点
+    base_url = api_url.rstrip('/v1') if '/v1' in api_url else api_url
+    generation_url = f"{base_url}/api/v1/services/aigc/multimodal-generation/generation"
+    
+    logger.info(f"调用 Qwen-Image API (multimodal-generation)，模型：{model}, 尺寸：{size}")
     logger.debug(f"Prompt: {prompt[:200]}...")
+    logger.debug(f"API URL: {generation_url}")
     
     try:
-        client = OpenAI(
-            api_key=api_key,
-            base_url=api_url,
-            timeout=300.0,
-            max_retries=2
-        )
-        
-        # Qwen-Image 使用 images 接口
-        logger.info(f"使用 OpenAI SDK 调用 Qwen-Image，base_url: {api_url}")
-        
-        # 构建请求参数
-        kwargs = {
-            'model': model,
-            'prompt': prompt,
-            'size': size,
-            'n': 1,
-            'response_format': 'url',
+        # 构建请求体
+        payload = {
+            "model": model,
+            "input": {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "text": prompt
+                            }
+                        ]
+                    }
+                ]
+            },
+            "parameters": {
+                "size": size,
+                "n": 1,
+                "prompt_extend": True,  # 开启智能改写
+                "watermark": False  # 不加水印
+            }
         }
         
-        # 如果有参考图片，添加额外头信息
+        # 添加参考图片（如果有）
         if ref_images:
-            kwargs['extra_headers'] = {
-                'X-DashScope-Image-Reference': 'true',
-            }
+            image_content = []
+            for ref_img in ref_images:
+                base64_image = encode_image_to_base64(ref_img)
+                image_content.append({
+                    "image": f"data:image/jpeg;base64,{base64_image}"
+                })
+            # 将图片添加到 content 数组
+            payload["input"]["messages"][0]["content"] = image_content + [{"text": prompt}]
         
-        try:
-            response = client.images.generate(**kwargs)
-        except Exception as gen_error:
-            # 如果 images.generate 失败，尝试 chat.completions 方式
-            logger.warning(f"images.generate 失败：{gen_error}")
-            logger.info("尝试使用 wanx 模型格式...")
-            
-            # 阿里云 DashScope 的 wanx 模型使用不同格式
-            response = client.images.generate(
-                model='wanx2.1-t2i-turbo',  # 尝试通义万相
-                prompt=prompt,
-                size=size,
-                n=1,
-            )
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+        
+        logger.debug(f"Request payload: {json.dumps(payload, ensure_ascii=False)[:500]}...")
+        
+        response = req.post(generation_url, headers=headers, json=payload, timeout=300)
+        
+        logger.debug(f"Response status: {response.status_code}")
+        logger.debug(f"Response body: {response.text[:500]}...")
+        
+        if response.status_code != 200:
+            logger.error(f"API 请求失败：{response.status_code} - {response.text}")
+            return None
+        
+        result = response.json()
+        
+        # 检查错误
+        if "code" in result:
+            logger.error(f"API 返回错误：{result.get('code')} - {result.get('message')}")
+            return None
         
         # 提取图片 URL
-        if hasattr(response, 'data') and response.data:
-            image_url = response.data[0].url
-            logger.info(f"获取到图片 URL: {image_url[:80]}...")
-            
-            # 下载图片
-            img_response = requests.get(image_url, timeout=60, stream=True)
-            img_response.raise_for_status()
-            
-            image = Image.open(BytesIO(img_response.content))
-            image.load()
-            logger.info(f"成功下载图片：{image.size}, {image.mode}")
-            return image
-        else:
+        output = result.get("output", {})
+        choices = output.get("choices", [])
+        
+        if not choices:
+            logger.error("API 返回数据中没有 choices")
+            return None
+        
+        message = choices[0].get("message", {})
+        content = message.get("content", [])
+        
+        if not content:
+            logger.error("API 返回数据中没有 content")
+            return None
+        
+        image_url = None
+        for item in content:
+            if isinstance(item, dict) and "image" in item:
+                image_url = item["image"]
+                break
+        
+        if not image_url:
             logger.error("API 返回数据中没有图片 URL")
             return None
-            
-        except Exception as e:
-            error_detail = f"调用生图接口失败：{type(e).__name__}: {str(e)}"
-            logger.error(error_detail, exc_info=True)
-            # 提供更详细的错误信息
-            if hasattr(e, 'response'):
-                logger.error(f"API Response: {e.response.text if hasattr(e.response, 'text') else e.response}")
-            return None
+        
+        logger.info(f"获取到图片 URL: {image_url[:80]}...")
+        
+        # 下载图片
+        img_response = req.get(image_url, timeout=60, stream=True)
+        img_response.raise_for_status()
+        
+        image = Image.open(BytesIO(img_response.content))
+        image.load()
+        logger.info(f"成功下载图片：{image.size}, {image.mode}")
+        return image
+        
+    except Exception as e:
+        error_detail = f"调用生图接口失败：{type(e).__name__}: {str(e)}"
+        logger.error(error_detail, exc_info=True)
+        return None
 
 
 def download_image(image: Image.Image, output_dir: Path, prefix: str = "page") -> str:
