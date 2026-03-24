@@ -120,9 +120,9 @@ class PPTGenerator:
             if method == 'GET':
                 response = self.session.get(url, timeout=timeout)
             elif method == 'POST':
-                response = self.session.post(url, json=data, timeout=timeout)
+                response = self.session.post(url, json=data or {}, timeout=timeout)
             elif method == 'PUT':
-                response = self.session.put(url, json=data, timeout=timeout)
+                response = self.session.put(url, json=data or {}, timeout=timeout)
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
             
@@ -360,7 +360,7 @@ class PPTGenerator:
         
         # 2. 生成大纲（触发后台任务）
         logger.info("步骤 2: 生成大纲")
-        outline_task = self._call_banana_api(f'/api/projects/{project_id}/generate/outline', 'POST')
+        outline_task = self._call_banana_api(f'/api/projects/{project_id}/generate/outline', 'POST', {})
         task_id = outline_task.get('task_id')
         if task_id:
             logger.info(f"大纲生成任务已提交，Task ID: {task_id}")
@@ -371,7 +371,7 @@ class PPTGenerator:
         
         # 4. 生成页面描述（触发后台任务）
         logger.info("步骤 3: 生成页面描述")
-        desc_task = self._call_banana_api(f'/api/projects/{project_id}/generate/descriptions', 'POST')
+        desc_task = self._call_banana_api(f'/api/projects/{project_id}/generate/descriptions', 'POST', {})
         task_id = desc_task.get('task_id')
         if task_id:
             logger.info(f"描述生成任务已提交，Task ID: {task_id}")
@@ -505,7 +505,7 @@ class PPTGenerator:
         """继续生成流程（等待任务、生成描述、配图、导出）"""
         # 1. 生成大纲（触发后台任务）
         logger.info("步骤 1: 生成大纲")
-        outline_task = self._call_banana_api(f'/api/projects/{project_id}/generate/outline', 'POST')
+        outline_task = self._call_banana_api(f'/api/projects/{project_id}/generate/outline', 'POST', {})
         task_id = outline_task.get('task_id')
         if task_id:
             logger.info(f"大纲生成任务已提交，Task ID: {task_id}")
@@ -516,7 +516,7 @@ class PPTGenerator:
         
         # 3. 生成页面描述（触发后台任务）
         logger.info("步骤 2: 生成页面描述")
-        desc_task = self._call_banana_api(f'/api/projects/{project_id}/generate/descriptions', 'POST')
+        desc_task = self._call_banana_api(f'/api/projects/{project_id}/generate/descriptions', 'POST', {})
         task_id = desc_task.get('task_id')
         if task_id:
             logger.info(f"描述生成任务已提交，Task ID: {task_id}")
