@@ -211,9 +211,9 @@ def request_image(
     """
     import requests as req
     
-    # Qwen-Image API 端点
-    base_url = api_url.rstrip('/v1') if '/v1' in api_url else api_url
-    generation_url = f"{base_url}/api/v1/services/aigc/multimodal-generation/generation"
+    # Qwen-Image API 端点 - 直接使用阿里云百炼官方端点
+    # 忽略传入的 api_url，使用正确的端点
+    generation_url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
     
     logger.info(f"调用 Qwen-Image API (multimodal-generation)，模型：{model}, 尺寸：{size}")
     logger.debug(f"Prompt: {prompt[:200]}...")
