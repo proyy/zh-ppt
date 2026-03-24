@@ -127,7 +127,13 @@ class PPTGenerator:
                 raise ValueError(f"Unsupported HTTP method: {method}")
             
             response.raise_for_status()
-            return response.json()
+            response_data = response.json()
+            
+            # banana-slides 响应格式：{"success": true, "data": {...}}
+            # 自动提取 data 字段，方便上层调用
+            if isinstance(response_data, dict) and 'data' in response_data:
+                return response_data['data']
+            return response_data
             
         except Exception as e:
             logger.error(f"API call failed: {method} {url} - {e}")
