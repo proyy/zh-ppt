@@ -219,6 +219,14 @@ class PPTGenerator:
         resolution = image_settings.get('resolution', '2K')
         
         logger.info(f"开始生成配图，使用模型：{image_model}")
+        logger.info(f"页面数量：{len(pages)}")
+        
+        # 调试：输出第一个页面的结构
+        if pages:
+            logger.debug(f"Page 1 keys: {list(pages[0].keys())}")
+            desc_content = pages[0].get('description_content', {})
+            if isinstance(desc_content, dict):
+                logger.debug(f"Page 1 description_content keys: {list(desc_content.keys())}")
         
         for i, page in enumerate(pages, 1):
             # 尝试多种字段获取 image_prompt
@@ -226,22 +234,23 @@ class PPTGenerator:
             
             # 如果没有 image_prompt，尝试从 description_content 提取
             if not prompt:
-                desc_content = page.get('description_content', {})
+                desc_content = page.get('description_content') or {}
                 if isinstance(desc_content, dict):
                     # 尝试从 description_content.text 提取
-                    prompt = desc_content.get('text', '')
-                    if prompt:
+                    text = desc_content.get('text', '')
+                    if text:
                         # 截取前 300 字符作为 prompt
-                        prompt = prompt[:300]
+                        prompt = text[:300]
                         logger.info(f"第 {i} 页使用 description_content.text 作为 prompt")
             
             # 如果还是没有，尝试从 outline_content 提取
             if not prompt:
-                outline_content = page.get('outline_content', {})
+                outline_content = page.get('outline_content') or {}
                 if isinstance(outline_content, dict):
-                    prompt = outline_content.get('title', '') + ' ' + outline_content.get('content', '')
-                    if prompt:
-                        prompt = prompt[:300]
+                    title = outline_content.get('title', '')
+                    content = outline_content.get('content', '')
+                    if title or content:
+                        prompt = (title + ' ' + content)[:300]
                         logger.info(f"第 {i} 页使用 outline_content 作为 prompt")
             
             if not prompt:
