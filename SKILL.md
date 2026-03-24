@@ -243,8 +243,8 @@ zh-ppt 的配置 (`config.json`) 和 banana-slides 的配置 (`.env` / 数据库
 **首次部署或更新配置时**，运行同步脚本：
 
 ```bash
-cd zh-ppt/scripts
-python sync_config.py
+cd scripts
+python scripts/sync_config.py
 ```
 
 这会自动将 `config.json` 同步到：
@@ -252,6 +252,27 @@ python sync_config.py
 - banana-slides 数据库 settings 表（通过 API）
 
 ### config.json
+
+```json
+{
+  "api_key": "YOUR_QWEN_API_KEY",
+  "api_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "models": {
+    "text": "qwen-max",
+    "image": "qwen-image-2.0-pro",
+    "vision": "qwen-vl-max"
+  },
+  "image_settings": {
+    "aspect_ratio": "16:9",
+    "resolution": "2K"
+  },
+  "output_dir": "./output",
+  "banana_slides": {
+    "api_base": "http://localhost:15280",
+    "timeout": 300
+  }
+}
+```
 
 ```json
 {
@@ -412,6 +433,34 @@ output/
 
 ## 注意事项
 
+### 0. 首次部署流程
+
+**重要**: 首次运行需要完成以下步骤：
+
+```bash
+# 1. 克隆仓库（包含子模块）
+git clone --recursive https://github.com/proyy/zh-ppt.git
+cd zh-ppt
+
+# 2. 配置 API Key
+编辑 config.json，填入 QWEN_API_KEY
+
+# 3. 安装依赖
+pip install -r requirements.txt
+
+# 4. 同步配置到 banana-slides
+python scripts/sync_config.py
+
+# 5. 初始化数据库（首次运行必需）
+python scripts/init_db.py
+
+# 6. 启动 banana-slides 服务
+cd banana-slides && python backend/app.py
+
+# 7. 生成 PPT（新终端）
+python scripts/ppt_generator.py --mode theme --prompt "人工智能发展史"
+```
+
 ### 1. API Key 配置
 - 使用前请在 config.json 中配置 `QWEN_API_KEY`
 - 获取 API Key：https://bailian.console.aliyun.com/
@@ -439,6 +488,17 @@ output/
 
 ## 故障排除
 
+### 问题 0：数据库表不存在
+
+**错误**: `sqlite3.OperationalError: no such table: settings` 或 `no such table: projects`
+
+**原因**: 首次运行时数据库未初始化
+
+**解决**:
+```bash
+python scripts/init_db.py
+```
+
 ### 问题 1：生图失败
 **错误**：`Error generating image with Qwen-Image`
 **解决**：
@@ -446,17 +506,49 @@ output/
 2. 确认网络连接正常
 3. 查看 logs/ 目录下的日志
 
-### 问题 2：banana-slides 服务无法连接
+### 问题 2：配置同步失败
+
+**错误**: `API 同步失败：500 - no such table: settings`
+
+**原因**: 数据库未初始化或 banana-slides 服务未启动
+
+**解决**:
+1. 运行 `python scripts/init_db.py` 初始化数据库
+2. 启动 banana-slides 服务：`cd banana-slides && python backend/app.py`
+3. 重新运行同步：`python scripts/sync_config.py`
+
+### 问题 3：banana-slides 服务无法连接
 **解决**：
 1. 确认后端服务已启动：`python banana-slides/backend/app.py`
 2. 检查端口是否正确（默认 15280）
 3. 查看 config.json 中的 api_base 配置
 
-### 问题 3：图片质量不佳
+### 问题 3：banana-slides 服务无法连接
+**解决**：
+1. 确认后端服务已启动：`python banana-slides/backend/app.py`
+2. 检查端口是否正确（默认 15280）
+3. 查看 config.json 中的 api_base 配置
+
+### 问题 4：图片质量不佳
 **解决**：
 1. 尝试使用 `qwen-image-2.0-pro` 模型
 2. 在 prompt 中添加更详细的描述
 3. 调整 resolution 参数为 2K 或 4K
+
+### 问题 5：子模块为空
+
+**错误**: `banana-slides/` 目录为空或缺少文件
+
+**原因**: 克隆时未使用 `--recursive` 参数
+
+**解决**:
+```bash
+# 方式 1：初始化子模块
+git submodule update --init --recursive
+
+# 方式 2：重新克隆
+git clone --recursive https://github.com/proyy/zh-ppt.git
+```
 
 ---
 
@@ -467,6 +559,12 @@ output/
 ---
 
 ## 更新日志
+
+### v1.1.0 (2025-03-24)
+- 添加数据库初始化脚本 `scripts/init_db.py`
+- 修正 config.json 加载路径为仓库根目录
+- 更新故障排除章节（数据库初始化、配置同步）
+- 完善首次部署流程说明
 
 ### v1.0.0 (2025-03-24)
 - 初始版本
