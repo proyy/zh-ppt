@@ -221,16 +221,32 @@ class PPTGenerator:
         logger.info(f"开始生成配图，使用模型：{image_model}")
         
         for i, page in enumerate(pages, 1):
+            # 尝试多种字段获取 image_prompt
             prompt = page.get('image_prompt', '')
+            
+            # 如果没有 image_prompt，尝试从 description_content 提取
             if not prompt:
-                # 尝试从 description 生成 prompt
-                description = page.get('description', '')
-                if description:
-                    prompt = description[:200]  # 使用描述作为 prompt
-                    logger.info(f"第 {i} 页使用 description 作为 prompt")
-                else:
-                    logger.warning(f"第 {i} 页缺少 image_prompt 和 description，跳过")
-                    continue
+                desc_content = page.get('description_content', {})
+                if isinstance(desc_content, dict):
+                    # 尝试从 description_content.text 提取
+                    prompt = desc_content.get('text', '')
+                    if prompt:
+                        # 截取前 300 字符作为 prompt
+                        prompt = prompt[:300]
+                        logger.info(f"第 {i} 页使用 description_content.text 作为 prompt")
+            
+            # 如果还是没有，尝试从 outline_content 提取
+            if not prompt:
+                outline_content = page.get('outline_content', {})
+                if isinstance(outline_content, dict):
+                    prompt = outline_content.get('title', '') + ' ' + outline_content.get('content', '')
+                    if prompt:
+                        prompt = prompt[:300]
+                        logger.info(f"第 {i} 页使用 outline_content 作为 prompt")
+            
+            if not prompt:
+                logger.warning(f"第 {i} 页缺少 image_prompt 和 description，跳过")
+                continue
             
             logger.info(f"生成第 {i} 页配图：{prompt[:50]}...")
             
@@ -388,6 +404,16 @@ class PPTGenerator:
         if not pages:
             raise RuntimeError(f"项目 {project_id} 没有页面数据")
         image_paths = self._generate_images(project_id, pages)
+        
+        if not image_paths:
+            logger.warning("没有生成任何图片，跳过 PPTX 导出")
+            logger.info("请检查 banana-slides 是否正确生成了页面描述")
+            return {
+                'success': False,
+                'project_id': project_id,
+                'message': '没有生成图片，无法导出 PPTX',
+                'pages': len(pages),
+            }
         
         # 7. 导出 PPTX
         logger.info("步骤 5: 导出 PPTX")
