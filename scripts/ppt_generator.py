@@ -355,6 +355,110 @@ class PPTGenerator:
         logger.info(f"元数据已保存：{metadata_path}")
         return str(metadata_path)
     
+    def generate_from_text(self, text: str) -> dict:
+        """
+        根据大段文本自动生成 PPT
+        
+        自动分析文本内容，提取主题和要求，调用 banana-slides 生成 PPT
+        
+        Args:
+            text: 大段文本内容（可以是需求描述、文档内容等）
+            
+        Returns:
+            生成结果
+        """
+        logger.info(f"开始从文本生成 PPT，文本长度：{len(text)} 字符")
+        
+        # 使用 Qwen 文本模型分析文本，提取主题和要求
+        logger.info("步骤 1: 分析文本内容，提取主题和要求")
+        
+        analysis_prompt = f"""请分析以下文本，提取 PPT 生成的主题和要求。
+
+文本内容：
+{text[:2000]}  # 限制长度避免 token 过多
+
+请以 JSON 格式返回：
+{{
+    "theme": "PPT 主题（一句话概括）",
+    "requirements": "详细要求（如果没有明确要求，根据内容推断）",
+    "mode": "主题类型（theme/document/refresh）",
+    "page_count":建议页数（数字）
+}}
+
+只返回 JSON，不要其他内容。"""
+        
+        try:
+            # 调用 Qwen API 分析文本
+            from openai import OpenAI
+            
+            client = OpenAI(
+                api_key=self.config.get('api_key', ''),
+                base_url=self.config.get('api_url', 'https://dashscope.aliyuncs.com/compatible-mode/v1'),
+                timeout=60
+            )
+            
+            response = client.chat.completions.create(
+                model=self.config.get('models', {}).get('text', 'qwen-max'),
+                messages=[
+                    {"role": "system", "content": "你是一个专业的 PPT 生成助手，擅长从文本中提取关键信息。"},
+                    {"role": "user", "content": analysis_prompt}
+                ],
+                temperature=0.3
+            )
+            
+            analysis_result = response.choices[0].message.content
+            logger.info(f"文本分析结果：{analysis_result[:500]}...")
+            
+            # 解析 JSON
+            import re
+            json_match = re.search(r'\{.*\}', analysis_result, re.DOTALL)
+            if json_match:
+                analysis = json.loads(json_match.group())
+            else:
+                analysis = json.loads(analysis_result)
+            
+            theme = analysis.get('theme', text[:100])
+            requirements = analysis.get('requirements', '')
+            mode = analysis.get('mode', 'theme')
+            
+            logger.info(f"提取的主题：{theme}")
+            logger.info(f"提取的要求：{requirements[:200] if requirements else '无'}")
+            logger.info(f"生成模式：{mode}")
+            
+        except Exception as e:
+            logger.warning(f"文本分析失败：{e}，使用原文本作为主题")
+            theme = text[:500]
+            requirements = ''
+            mode = 'theme'
+        
+        # 根据分析结果调用相应的生成方法
+        logger.info(f"步骤 2: 调用生成方法（mode={mode}）")
+        
+        if mode == 'document':
+            # 如果是文档类型，保存为临时文件后处理
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as f:
+                f.write(text)
+                temp_file = f.name
+            
+            try:
+                result = self.generate_from_document(temp_file, requirements)
+            finally:
+                os.unlink(temp_file)
+        else:
+            # 默认使用主题生成
+            result = self.generate_from_theme(theme, requirements)
+        
+        # 添加分析结果到返回
+        result['analysis'] = {
+            'theme': theme,
+            'requirements': requirements,
+            'mode': mode,
+            'original_length': len(text)
+        }
+        
+        return result
+    
     def generate_from_theme(self, prompt: str, requirements: str = None) -> dict:
         """
         根据主题生成 PPT
@@ -608,6 +712,17 @@ def print_result(result: dict):
     print(f"🖼️ 配图数量：{len(result['image_paths'])} 张")
     print(f"📄 页数：{result['page_count']} 页")
     print(f"📋 元数据：{result['metadata_path']}")
+    
+    # 显示分析结果（如果是 auto 模式）
+    if 'analysis' in result:
+        print("\n📊 智能分析结果:")
+        analysis = result['analysis']
+        print(f"   主题：{analysis.get('theme', 'N/A')}")
+        print(f"   模式：{analysis.get('mode', 'N/A')}")
+        print(f"   原文长度：{analysis.get('original_length', 0)} 字符")
+        if analysis.get('requirements'):
+            print(f"   要求：{analysis['requirements'][:100]}...")
+    
     print("=" * 60)
 
 
@@ -626,6 +741,12 @@ def main():
   
   # PPT 翻新
   python ppt_generator.py --mode refresh --file old.pptx --requirement "做得更现代简洁"
+  
+  # 根据大段文本自动生成（智能分析）
+  python ppt_generator.py --mode auto --text "我需要做一个关于...的 PPT，要求包括..."
+  
+  # 从文件读取大段文本
+  python ppt_generator.py --mode auto --text-file requirements.txt
         """
     )
     
@@ -633,7 +754,7 @@ def main():
         '--mode', '-m',
         required=True,
         help='生成模式',
-        choices=['theme', 'document', 'refresh']
+        choices=['theme', 'document', 'refresh', 'auto']
     )
     parser.add_argument(
         '--prompt', '-p',
@@ -642,6 +763,14 @@ def main():
     parser.add_argument(
         '--file', '-f',
         help='输入文件路径（document/refresh 模式必填）'
+    )
+    parser.add_argument(
+        '--text', '-t',
+        help='大段文本内容（auto 模式使用）'
+    )
+    parser.add_argument(
+        '--text-file',
+        help='包含大段文本的文件路径（auto 模式使用）'
     )
     parser.add_argument(
         '--requirement', '-r',
@@ -672,8 +801,16 @@ def main():
         logger.error(f"{args.mode} 模式需要指定 --file")
         sys.exit(1)
     
+    if args.mode == 'auto' and not args.text and not args.text_file:
+        logger.error("auto 模式需要指定 --text 或 --text-file")
+        sys.exit(1)
+    
     if args.file and not os.path.exists(args.file):
         logger.error(f"文件不存在：{args.file}")
+        sys.exit(1)
+    
+    if args.text_file and not os.path.exists(args.text_file):
+        logger.error(f"文本文件不存在：{args.text_file}")
         sys.exit(1)
     
     # 创建生成器并执行
@@ -686,6 +823,17 @@ def main():
             result = generator.generate_from_document(args.file, args.requirement)
         elif args.mode == 'refresh':
             result = generator.refresh_ppt(args.file, args.requirement)
+        elif args.mode == 'auto':
+            # 从文件或命令行获取文本
+            if args.text_file:
+                with open(args.text_file, 'r', encoding='utf-8') as f:
+                    text = f.read()
+                logger.info(f"从文件读取文本：{args.text_file} ({len(text)} 字符)")
+            else:
+                text = args.text
+                logger.info(f"使用命令行文本 ({len(text)} 字符)")
+            
+            result = generator.generate_from_text(text)
         
         print_result(result)
         
