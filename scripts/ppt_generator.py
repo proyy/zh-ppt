@@ -561,12 +561,15 @@ class PPTGenerator:
         
         Args:
             prompt: 主题/想法
-            requirements: 额外要求
+            requirements: 额外要求（包含详细内容要求、风格要求、必须包含内容等）
             
         Returns:
             生成结果
         """
         logger.info(f"开始从主题生成 PPT：{prompt}")
+        if requirements:
+            logger.info(f"详细要求：{requirements[:1000]}...")
+            logger.info(f"要求长度：{len(requirements)} 字符")
         
         # 1. 创建项目
         logger.info("步骤 1: 创建项目")
@@ -576,6 +579,12 @@ class PPTGenerator:
         }
         if requirements:
             project_data['outline_requirements'] = requirements
+            logger.info(f"已设置 outline_requirements：{len(requirements)} 字符")
+        else:
+            logger.warning("未提供 outline_requirements，PPT 内容可能不符合预期")
+        
+        logger.info(f"调用 banana-slides API: POST /api/projects")
+        logger.debug(f"project_data: {json.dumps(project_data, ensure_ascii=False)[:500]}...")
         
         project = self._call_banana_api('/api/projects', 'POST', project_data)
         project_id = project.get('project_id') or project.get('id')
@@ -648,17 +657,19 @@ class PPTGenerator:
         
         Args:
             file_path: 文档路径
-            requirements: 额外要求
-            
+            requirements: 额外要求（包含详细内容要求、风格要求等）
+             
         Returns:
             生成结果
         """
         logger.info(f"开始从文档生成 PPT：{file_path}")
+        if requirements:
+            logger.info(f"详细要求：{requirements[:500]}...")
         
-        # 1. 上传文件
+        # 1. 上传文件到 /api/reference-files/upload
         logger.info("步骤 1: 上传文件")
         api_base = self.config.get('banana_slides', {}).get('api_base', 'http://localhost:15280')
-        upload_url = f"{api_base}/api/files"
+        upload_url = f"{api_base}/api/reference-files/upload"
         
         with open(file_path, 'rb') as f:
             files = {'file': f}
@@ -679,6 +690,12 @@ class PPTGenerator:
         }
         if requirements:
             project_data['outline_requirements'] = requirements
+            logger.info(f"已设置 outline_requirements：{len(requirements)} 字符")
+        else:
+            logger.warning("未提供 outline_requirements，PPT 内容可能不符合预期")
+        
+        logger.info(f"调用 banana-slides API: POST /api/projects")
+        logger.debug(f"project_data: {json.dumps(project_data, ensure_ascii=False)[:500]}...")
         
         project = self._call_banana_api('/api/projects', 'POST', project_data)
         project_id = project.get('project_id') or project.get('id')
@@ -695,17 +712,19 @@ class PPTGenerator:
         
         Args:
             file_path: PPT 文件路径
-            requirements: 翻新要求
-            
+            requirements: 翻新要求（包含详细风格要求、必须保留的内容等）
+             
         Returns:
             生成结果
         """
-        logger.info(f"开始翻新 PPT：{file_path}, 要求：{requirements}")
+        logger.info(f"开始翻新 PPT：{file_path}")
+        if requirements:
+            logger.info(f"翻新要求：{requirements[:500]}...")
         
-        # 1. 上传文件
+        # 1. 上传文件到 /api/reference-files/upload
         logger.info("步骤 1: 上传文件")
         api_base = self.config.get('banana_slides', {}).get('api_base', 'http://localhost:15280')
-        upload_url = f"{api_base}/api/files"
+        upload_url = f"{api_base}/api/reference-files/upload"
         
         with open(file_path, 'rb') as f:
             files = {'file': f}
@@ -726,6 +745,12 @@ class PPTGenerator:
         }
         if requirements:
             project_data['outline_requirements'] = requirements
+            logger.info(f"已设置 outline_requirements：{len(requirements)} 字符")
+        else:
+            logger.warning("未提供 outline_requirements，PPT 翻新可能不符合预期")
+        
+        logger.info(f"调用 banana-slides API: POST /api/projects")
+        logger.debug(f"project_data: {json.dumps(project_data, ensure_ascii=False)[:500]}...")
         
         project = self._call_banana_api('/api/projects', 'POST', project_data)
         project_id = project.get('project_id') or project.get('id')
