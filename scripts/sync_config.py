@@ -158,7 +158,7 @@ def sync_via_api(zh_ppt_config: dict, dry_run: bool = False):
         return
     
     try:
-        # 更新 settings
+        # 更新 settings - PUT /api/settings
         response = requests.put(
             f'{api_base}/api/settings',
             json=settings_data,
@@ -167,6 +167,10 @@ def sync_via_api(zh_ppt_config: dict, dry_run: bool = False):
         
         if response.status_code == 200:
             logger.info("配置已通过 API 同步到 banana-slides 数据库")
+        elif response.status_code == 500 and 'no such table: settings' in response.text:
+            logger.warning("数据库未初始化，请先运行初始化脚本")
+            logger.info("运行：python scripts/init_db.py")
+            logger.info("或启动 banana-slides 服务时会自动初始化")
         else:
             logger.warning(f"API 同步失败：{response.status_code} - {response.text}")
             logger.info("请确保 banana-slides 服务已启动")
