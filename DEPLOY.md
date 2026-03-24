@@ -74,7 +74,7 @@ python scripts/sync_config.py
 
 **注意**: 此步骤会自动配置 banana-slides 所需的所有环境变量，无需手动编辑 .env 文件。
 
-### 步骤 6：配置环境变量（可选，手动配置）
+### 步骤 6.5：配置环境变量（可选，手动配置）
 
 创建 `.env` 文件（在 banana-slides 目录）：
 
@@ -93,6 +93,17 @@ IMAGE_CAPTION_MODEL=qwen-vl-max
 
 # 端口配置（可选，默认 15280）
 BACKEND_PORT=15280
+```
+
+### 步骤 6：初始化数据库（首次运行）
+
+```bash
+# 首次运行时需要初始化数据库
+python scripts/init_db.py
+
+# 输出示例：
+# [OK] 数据库表创建成功
+# [INFO] 已创建的表：materials, pages, projects, settings, tasks, ...
 ```
 
 ### 步骤 7：启动服务
