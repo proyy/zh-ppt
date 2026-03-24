@@ -1,5 +1,5 @@
 {
-  "api_key": "",
+  "api_key": "sk-5a319174308c43ecb653c62bbc92b6a3",
   "api_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
   "models": {
     "text": "qwen-max",
@@ -10,7 +10,7 @@
     "aspect_ratio": "16:9",
     "resolution": "2K"
   },
-  "output_dir": "./output",
+  "output_dir": "C:/Users/Administrator/Desktop/ppt-output",
   "banana_slides": {
     "api_base": "http://localhost:15280",
     "timeout": 300

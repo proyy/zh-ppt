@@ -6,7 +6,7 @@
 
 ```yaml
 name: zh-ppt
-version: 1.2.0
+version: 1.3.0
 description: 从主题、文档、大段文本或现有 PPT 生成完整幻灯片（智能分析 + 大纲 + 描述 + 配图 + 导出）
 author: Your Name
 language: zh-CN
@@ -23,8 +23,8 @@ capabilities:
   - theme_to_ppt: 根据主题生成 PPT
   - document_to_ppt: 文档/参考材料转 PPT
   - ppt_refresh: PPT 翻新美化
-  - text_to_ppt: 大段文本智能分析生成 PPT（NEW）
-  - generate_images: 根据页面描述生成配图
+  - text_to_ppt: 大段文本智能分析生成 PPT
+  - generate_images: 根据页面描述生成配图（banana-slides 原生 API）
   - export_pptx: 导出标准 PPTX 文件
 models:
   text: qwen-max                    # 大纲与描述生成、文本分析
@@ -43,15 +43,15 @@ runtime:
 
 | 模块 | 职责 | 源码位置 |
 |------|------|----------|
-| **banana-slides** | PPT 结构规划、内容生成、页面排版、导出 | `./banana-slides/` |
-| **zh-ppt 技能** | 调用调度、智能分析、生图、组装导出 | `./scripts/` |
+| **banana-slides** | PPT 结构规划、内容生成、页面排版、导出、图片生成 | `./banana-slides/` |
+| **zh-ppt 技能** | 调用调度、智能分析、流程整合 | `./scripts/` |
 | **Qwen 系列** | 文本分析、视觉理解、文生图 | 阿里云百炼 API |
 
 ### 核心流程
 
 ```
 用户请求 → 识别类型 → 智能分析（可选）→ banana-slides 生成大纲/描述 
-       → zh-ppt 调用 Qwen-Image 生图 → 组装 PPTX → 输出
+       → banana-slides 调用 Qwen-Image 生图 → 组装 PPTX → 输出
 ```
 
 ### 支持的生成模式
@@ -61,7 +61,7 @@ runtime:
 | **theme** | 主题文字 | 根据简短主题生成 PPT |
 | **document** | PDF/Word/Markdown 文件 | 从文档提取内容生成 PPT |
 | **refresh** | PPTX 文件 | 翻新美化已有 PPT |
-| **auto** | 大段文本/需求描述 | 智能分析文本后自动生成（NEW） |
+| **auto** | 大段文本/需求描述 | 智能分析文本后自动生成 |
 
 ---
 
@@ -71,25 +71,25 @@ runtime:
 
 | 功能 | 源码路径 | 说明 |
 |------|----------|------|
-| 项目入口 | `./banana-slides/backend/app.py` | Flask 后端服务启动 |
+| 项目入口 | `./banana-slides/backend/app.py` | Flask 后端服务启动（默认端口 15280） |
 | 工作流总控 | `./banana-slides/backend/controllers/project_controller.py` | 项目创建、大纲生成、描述生成 |
-| 单页生成与改图 | `./banana-slides/backend/controllers/page_controller.py` | 单页内容编辑、图片替换 |
+| 单页生成与改图 | `./banana-slides/backend/controllers/page_controller.py` | 单页内容编辑、图片生成 |
 | 提示词中心 | `./banana-slides/backend/services/prompts.py` | 所有 AI 提示词模板 |
 | AI 调度 | `./banana-slides/backend/services/ai_service.py` | 调用文本/图像/视觉模型 |
 | 参考文档解析 | `./banana-slides/backend/services/file_parser_service.py` | PDF/Word/Markdown 解析 |
 | 导出服务 | `./banana-slides/backend/controllers/export_controller.py` | PPTX/PDF 导出接口 |
 | 导出实现 | `./banana-slides/backend/services/export_service.py` | PPTX 组装逻辑 |
 | Qwen 文本支持 | `./banana-slides/backend/services/ai_providers/text/qwen_provider.py` | Qwen 文本模型 Provider |
-| Qwen 图像支持 | `./banana-slides/backend/services/ai_providers/image/qwen_provider.py` | Qwen 文生图 Provider |
+| Qwen 图像支持 | `./banana-slides/backend/services/ai_providers/image/qwen_provider.py` | Qwen 文生图 Provider（multimodal-generation API） |
 
 ### zh-ppt 技能模块
 
 | 模块 | 源码路径 | 说明 |
 |------|----------|------|
-| 生图脚本 | `./scripts/generate.py` | 调用 Qwen-Image API 生成配图 |
-| PPT 生成主脚本 | `./scripts/ppt_generator.py` | 整合 banana-slides 和生图流程 |
-| 配置同步脚本 | `./scripts/sync_config.py` | 同步配置到 banana-slides |
+| PPT 生成主脚本 | `./scripts/ppt_generator.py` | 整合 banana-slides 流程，支持 4 种模式 |
+| 配置同步脚本 | `./scripts/sync_config.py` | 同步配置到 banana-slides .env 和数据库 |
 | 数据库初始化 | `./scripts/init_db.py` | 首次运行时创建数据库表 |
+| 独立生图脚本 | `./scripts/generate.py` | 单独调用 Qwen-Image API 生成配图（可选） |
 | 配置文件 | `./config.json` | API Key、模型、输出目录配置 |
 
 ---
@@ -101,18 +101,23 @@ runtime:
 ```
 触发：用户给定简短主题/想法
 流程:
-  1. POST /api/projects (creation_type=idea, idea_prompt="主题")
-     → banana-slides 生成大纲
+  1. POST /api/projects (creation_type=idea, idea_prompt="主题", outline_requirements="要求")
+     → banana-slides 创建项目
   2. POST /api/projects/{id}/generate/outline
      → 触发后台任务生成大纲
   3. GET /api/projects/{id}/tasks/{task_id} (轮询)
-     → 等待大纲完成
-  4. POST /api/projects/{id}/generate/descriptions
+     → 等待大纲完成（状态：COMPLETED）
+  4. GET /api/projects/{id}
+     → 获取大纲结果
+  5. POST /api/projects/{id}/generate/descriptions
      → 生成页面描述
-  5. 轮询任务状态 → 等待描述完成
-  6. 调用 generate.py → Qwen-Image 为每页生成配图
-  7. GET /api/projects/{id}/export/pptx
-     → 组装 PPTX 输出
+  6. 轮询任务状态 → 等待描述完成
+  7. GET /api/projects/{id}
+     → 获取描述结果
+  8. POST /api/projects/{id}/pages/{page_id}/generate/image (每页)
+     → banana-slides 调用 Qwen-Image 生成配图
+  9. GET /api/projects/{id}/export/pptx
+     → 导出 PPTX（图片路径已保存到数据库）
 ```
 
 ### 规则 2：文档转 PPT
@@ -122,7 +127,7 @@ runtime:
 流程:
   1. POST /api/reference-files/upload (上传文档)
      → 获取 file_id
-  2. POST /api/projects (creation_type=idea, reference_file_ids=[file_id])
+  2. POST /api/projects (creation_type=idea, reference_file_ids=[file_id], outline_requirements="要求")
      → banana-slides 解析文档并生成大纲
   3. 后续流程同规则 1
 ```
@@ -134,22 +139,28 @@ runtime:
 流程:
   1. POST /api/reference-files/upload (上传 PPT)
      → 获取 file_id
-  2. POST /api/projects (creation_type=idea, reference_file_ids=[file_id])
+  2. POST /api/projects (creation_type=idea, reference_file_ids=[file_id], outline_requirements="要求")
      → banana-slides 解析原 PPT 并重新设计
   3. 后续流程同规则 1
 ```
 
-### 规则 4：大段文本智能分析生成（NEW）
+### 规则 4：大段文本智能分析生成
 
 ```
 触发：用户提供大段文本需求描述
 流程:
-  1. 调用 Qwen 文本模型分析文本
-     → 提取主题、要求、建议页数
-     → 判断生成模式（theme/document）
-  2. 根据分析结果调用相应模式
+  1. 调用 Qwen 文本模型分析文本（qwen-max）
+     → 提取主题（theme）
+     → 提取详细要求（detailed_requirements）
+     → 提取风格要求（style_requirements）
+     → 提取关键要点（key_points）
+     → 提取必须包含内容（must_include）
+     → 建议页数（page_count）
+     → 判断生成模式（mode: theme/document）
+  2. 合并要求为 outline_requirements
+  3. 根据分析结果调用相应模式
      → 主题生成 或 文档转 PPT
-  3. 后续流程同规则 1/2
+  4. 后续流程同规则 1/2
 ```
 
 ---
@@ -198,7 +209,7 @@ runtime:
 用户：[上传 quarterly.pptx] 翻新这个季度汇报 PPT
 ```
 
-### 条件 4：大段文本智能分析（NEW）
+### 条件 4：大段文本智能分析
 
 **触发条件**：
 - 用户提供大段文本需求描述
@@ -255,24 +266,23 @@ curl -X POST http://localhost:15280/api/projects/{project_id}/generate/descripti
   -d '{}'
 ```
 
-### 流程 2：调用 generate.py 生图
+### 流程 2：调用 banana-slides 原生 API 生成配图
 
 ```bash
-# 为每页生成配图
-cd scripts
+# 为每页生成配图（使用 banana-slides 原生 API）
+curl -X POST http://localhost:15280/api/projects/{project_id}/pages/{page_id}/generate/image \
+  -H "Content-Type: application/json" \
+  -d '{
+    "use_template": false,
+    "force_regenerate": true,
+    "style_description": "科技感风格，蓝色调"
+  }'
 
-python generate.py \
-  --prompt "人工智能发展历程的时间轴图表，科技感风格，蓝色调" \
-  --model qwen-image-2.0-pro \
-  --aspect-ratio 16:9 \
-  --resolution 2K \
-  --prefix page_1 \
-  --json
-
-# 输出：JSON 输出：{"success": true, "path": "output/images/page_1_...png"}
+# 返回：{"success": true, "data": {"page_id": "uuid", "generated_image_path": "/files/.../page_xxx.png"}}
+# 图片路径自动保存到数据库，导出时可直接使用
 ```
 
-### 流程 3：组装成标准 PPTX 文件
+### 流程 3：导出 PPTX
 
 ```bash
 # 调用 banana-slides 导出接口
@@ -400,7 +410,7 @@ python scripts/ppt_generator.py --mode theme \
 
 3. ✓ 生成页面描述（12 页）
 
-4. ✓ 生成配图（12 张，使用 qwen-image-2.0-pro）
+4. ✓ 生成配图（12 张，使用 banana-slides 原生 API + qwen-image-2.0-pro）
 
 5. ✓ 导出 PPTX 文件
 
@@ -441,7 +451,7 @@ python scripts/ppt_generator.py --mode document \
 ============================================================
 ```
 
-### 示例 3：大段文本智能分析生成（NEW）
+### 示例 3：大段文本智能分析生成
 
 **命令行**:
 ```bash
@@ -459,7 +469,7 @@ python scripts/ppt_generator.py --mode auto \
 📊 正在分析文本内容，提取主题和要求...
 📊 文本分析完成：
    - 主题：产品发布 PPT - AI 助手
-   - 要求：包含产品介绍、功能特点、市场分析、竞争优势
+   - 风格要求：科技感强一些
    - 模式：theme
    - 建议页数：15 页
 
@@ -477,7 +487,7 @@ python scripts/ppt_generator.py --mode auto \
    主题：产品发布 PPT - AI 助手
    模式：theme
    原文长度：156 字符
-   要求：包含产品介绍、功能特点、市场分析、竞争优势...
+   风格要求：科技感强一些
 ============================================================
 ```
 
@@ -533,7 +543,7 @@ python scripts/ppt_generator.py --mode theme --prompt "人工智能发展史"
 - 文本分析：约 5-10 秒（auto 模式）
 - 大纲生成：约 10-30 秒
 - 页面描述：约 5-15 秒/页
-- 图片生成：约 10-30 秒/张
+- 图片生成：约 10-30 秒/张（使用 banana-slides 原生 API）
 - 一个 12 页 PPT 总计约 5-10 分钟
 
 ### 4. 费用参考
@@ -562,13 +572,14 @@ python scripts/init_db.py
 
 ### 问题 1：生图失败
 
-**错误**: `Error generating image with Qwen-Image`
+**错误**: `Error generating image with Qwen-Image` 或 `NotFoundError: Error code: 404`
 
 **解决**:
 1. 检查 config.json 中的 api_key 是否正确
 2. 确认网络连接正常
 3. 查看 logs/ppt_generator.log 日志
-4. 确认使用的是正确的 API 端点（multimodal-generation）
+4. 确认 banana-slides 已正确配置 QWEN_API_KEY（运行 sync_config.py）
+5. 确认使用的是正确的 API 端点（multimodal-generation）
 
 ### 问题 2：配置同步失败
 
@@ -620,9 +631,21 @@ git clone --recursive https://github.com/proyy/zh-ppt.git
 
 **解决**:
 1. 检查 config.json 中的 api_key 是否正确
-2. 确认文本长度不超过 2000 字符（会自动截断）
+2. 确认文本长度不超过 8000 字符（会自动分段）
 3. 查看日志了解具体错误原因
 4. 手动使用 theme 模式并提供明确的主题
+
+### 问题 7：导出 PPTX 失败（400 错误）
+
+**错误**: `400 Client Error: BAD REQUEST for url: .../export/pptx`
+
+**原因**: 页面缺少 generated_image_path（图片未生成）
+
+**解决**:
+1. 确认图片生成步骤已完成
+2. 检查 banana-slides 日志确认图片生成成功
+3. 确认 style_description 参数已提供（banana-slides 需要）
+4. 使用 banana-slides 原生 API 生成图片（已默认使用）
 
 ---
 
@@ -633,6 +656,14 @@ git clone --recursive https://github.com/proyy/zh-ppt.git
 ---
 
 ## 更新日志
+
+### v1.3.0 (2026-03-24)
+- **修复**：使用 banana-slides 原生 API 生成页面图片
+- **修复**：auto 模式风格要求正确传递给图片生成 API
+- **修复**：从 requirements 中提取 style_description
+- **修复**：_continue_generation 传递 requirements 参数
+- **优化**：图片生成成功后自动保存到数据库
+- **优化**：导出 PPTX 时可正确找到图片路径
 
 ### v1.2.0 (2026-03-24)
 - **新增 auto 模式**：支持大段文本智能分析生成 PPT
