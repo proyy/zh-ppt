@@ -537,7 +537,13 @@ python scripts/sync_config.py
 cd banana-slides && python backend/app.py
 
 # 7. 生成 PPT（新终端）
-python scripts/ppt_generator.py --mode theme --prompt "人工智能发展史"
+python scripts/ppt_generator.py --mode auto \
+  --text "我需要做一个产品发布 PPT，包含以下部分：
+         1. 产品介绍：我们的新产品是一款 AI 助手
+         2. 功能特点：支持多轮对话、知识问答、代码生成
+         3. 市场分析：目标用户是企业客户
+         4. 竞争优势：相比竞品有更好的性价比
+         大概需要 15 页左右，风格要科技感强一些"
 ```
 
 **注意**：步骤 4 和 5 的顺序不能颠倒，必须先初始化数据库再同步配置。
